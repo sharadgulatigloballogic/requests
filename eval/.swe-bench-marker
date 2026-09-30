@@ -1,0 +1,3 @@
+swe-custom-bench eval branch — base_commit: fe693c492242ae532211e0c173324f09ca8cf227
+repo: psf/requests
+branch: eval-psf__requests
