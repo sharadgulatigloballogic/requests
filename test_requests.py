@@ -1340,6 +1340,34 @@ class RedirectSession(SessionRedirectMixin):
         return string
 
 
+class RedirectSessionWithLocations(RedirectSession):
+    """Like RedirectSession, but yields a distinct Location header for
+    each successive redirect instead of always redirecting to '/'."""
+
+    def __init__(self, order_of_redirects, order_of_locations):
+        super(RedirectSessionWithLocations, self).__init__(order_of_redirects)
+        self.locations = order_of_locations
+
+    def build_response(self):
+        request = self.calls[-1].args[0]
+        r = requests.Response()
+
+        try:
+            r.status_code = int(self.redirects.pop(0))
+        except IndexError:
+            r.status_code = 200
+
+        try:
+            location = self.locations.pop(0)
+        except IndexError:
+            location = '/'
+
+        r.headers = CaseInsensitiveDict({'Location': location})
+        r.raw = self._build_raw()
+        r.request = request
+        return r
+
+
 class TestRedirects:
     default_keyword_args = {
         'stream': False,
@@ -1362,6 +1390,27 @@ class TestRedirects:
             send_call = SendCall((response.request,),
                                  TestRedirects.default_keyword_args)
             assert session.calls[-1] == send_call
+
+    def test_303_then_307_preserves_get_downgrade(self):
+        # Regression test for: a 303 downgrades POST -> GET, and a
+        # subsequent 307/308 in the same redirect chain must preserve
+        # that GET rather than reverting to the original POST.
+        session = RedirectSessionWithLocations(
+            [303, 307],
+            ['/new_thing_1513', '//failover.example.com/new_thing_1513'],
+        )
+        prep = requests.Request(
+            'POST', 'http://server.example.com/do_something').prepare()
+        r0 = session.send(prep)
+        assert r0.request.method == 'POST'
+
+        redirect_generator = session.resolve_redirects(r0, prep)
+        responses = list(redirect_generator)
+
+        assert [response.request.method for response in responses] == \
+            ['GET', 'GET']
+        assert responses[-1].request.url == \
+            'http://failover.example.com/new_thing_1513'
 
 
 @pytest.fixture
