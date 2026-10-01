@@ -91,9 +91,15 @@ class SessionRedirectMixin(object):
         """Receives a Response. Returns a generator of Responses."""
 
         i = 0
+        # Carried forward across iterations so that a method/body change
+        # made while handling an earlier redirect (e.g. a 303 downgrading
+        # POST to GET) is preserved by later redirects in the same chain,
+        # instead of being overwritten by the original request.
+        prepared_request = req.copy()
 
         while resp.is_redirect:
-            prepared_request = req.copy()
+            previous_request = prepared_request
+            prepared_request = previous_request.copy()
 
             try:
                 resp.content  # Consume socket so it can be released
@@ -107,7 +113,7 @@ class SessionRedirectMixin(object):
             resp.close()
 
             url = resp.headers['location']
-            method = req.method
+            method = prepared_request.method
 
             # Handle redirection without scheme (see: RFC 1808 Section 4)
             if url.startswith('//'):
@@ -129,7 +135,7 @@ class SessionRedirectMixin(object):
             prepared_request.url = to_native_string(url)
             # cache the url
             if resp.is_permanent_redirect:
-                self.redirect_cache[req.url] = prepared_request.url
+                self.redirect_cache[previous_request.url] = prepared_request.url
 
             # http://tools.ietf.org/html/rfc7231#section-6.4.4
             if (resp.status_code == codes.see_other and
@@ -169,11 +175,8 @@ class SessionRedirectMixin(object):
             proxies = self.rebuild_proxies(prepared_request, proxies)
             self.rebuild_auth(prepared_request, resp)
 
-            # Override the original request.
-            req = prepared_request
-
             resp = self.send(
-                req,
+                prepared_request,
                 stream=stream,
                 timeout=timeout,
                 verify=verify,
