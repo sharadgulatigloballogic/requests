@@ -740,6 +740,23 @@ class RequestsTestCase(unittest.TestCase):
         chunks = r.iter_content(decode_unicode=True)
         assert all(isinstance(chunk, str) for chunk in chunks)
 
+    def test_iter_content_wraps_socket_error_in_connection_error(self):
+        """A socket.error raised while streaming the response body (e.g. a
+        connection reset) should surface as a requests.ConnectionError
+        instead of propagating unwrapped.
+        """
+        import socket
+
+        class RaisingRaw(object):
+            def stream(self, chunk_size, decode_content=None):
+                raise socket.error('Connection reset by peer')
+
+        r = requests.Response()
+        r.raw = RaisingRaw()
+
+        with pytest.raises(requests.exceptions.ConnectionError):
+            list(r.iter_content(1024))
+
     def test_request_and_response_are_pickleable(self):
         r = requests.get(httpbin('get'))
 
