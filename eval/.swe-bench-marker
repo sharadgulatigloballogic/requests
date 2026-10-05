@@ -1,0 +1,4 @@
+swe-custom-bench eval branch — base_commit: 110048f9837f8441ea536804115e80b69f400277
+repo: psf/requests
+branch: eval-psf__requests-1963-set-b
+set: set_b (first instance)
